@@ -43,11 +43,20 @@ th:first-child,td:first-child{text-align:left}
 th{color:var(--text2);font-weight:600}
 tr.be td{background:var(--warnbg);font-weight:600}tr.be td:first-child{border-left:3px solid var(--warnline)}
 th.grp{text-align:center;border-bottom:1px solid var(--text2)}
-td.pos{color:var(--good)}td.neg{color:var(--bad)}
+td.pos,b.pos{color:var(--good)}td.neg,b.neg{color:var(--bad)}
 .pass{color:var(--good);font-weight:600}.fail{color:var(--bad);font-weight:600}
 img{max-width:100%;height:auto;display:block}
 details{margin:8px 0}summary{cursor:pointer;color:var(--accent)}
 small,.muted{color:var(--text2)}
+a{color:var(--accent)}
+.live{border:1px solid var(--line);border-radius:6px;padding:14px 18px;margin:16px 0;display:grid;gap:10px}
+.live h3{margin:0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pill{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--warnbg);
+border:1px solid var(--warnline)}
+.bar{height:8px;background:var(--panel);border-radius:4px;overflow:hidden}
+.bar>span{display:block;height:100%;background:var(--accent)}
+.live .row{display:flex;flex-wrap:wrap;gap:6px 18px;font-variant-numeric:tabular-nums}
+.live p{margin:0}
 """
 
 FMT = {
@@ -129,11 +138,48 @@ def picture(returns: pd.DataFrame, alt: str) -> str:
             f'<img alt="{html.escape(alt)}" src="data:image/png;base64,{light}"></picture>')
 
 
+def forward_status(fwd: pd.DataFrame, r: Results) -> str:
+    """Live paper-test summary shown at the top of the page. Never draws a verdict early."""
+    cfg = r.cfg
+    n, need = len(fwd), cfg.forward_min_days
+    pct = min(100, round(100 * n / need))
+    reached = n >= need
+    pill = "Verdict allowed" if reached else "Collecting data, no verdict yet"
+    parts = [
+        f"<section class='live' aria-label='Live paper test'>",
+        f"<h3>Live paper test <span class='pill'>{pill}</span></h3>",
+        f"<p>Every weekday after the US close, the real open and close prices of that day are fetched and "
+        f"each strategy is scored on them. These are new prices the strategy never saw, not past data. "
+        f"No real orders are placed.</p>",
+        f"<div class='bar' role='progressbar' aria-valuemin='0' aria-valuemax='{need}' aria-valuenow='{n}'>"
+        f"<span style='width:{pct}%'></span></div>",
+    ]
+    if n == 0:
+        parts.append(f"<p><b>0 / {need}</b> trading days recorded. The first live day is the first session "
+                     f"after {cfg.backtest_end}.</p>")
+    else:
+        rets = fwd[STRATEGIES].astype(float)
+        cum = (1 + rets).prod() - 1
+        parts.append(f"<p><b>{n} / {need}</b> trading days recorded, from {fwd.index[0].date()} to "
+                     f"{fwd.index[-1].date()} (last update).</p>")
+        parts.append("<div class='row'>" + "".join(
+            f"<span>{LABELS[s]}: <b class='{'pos' if cum[s] > 0 else 'neg' if cum[s] < 0 else ''}'>"
+            f"{cum[s] * 100:+.2f}%</b></span>" for s in STRATEGIES) + "</div>")
+    if not reached:
+        parts.append(f"<p class='muted'>Pre-registered rule: these live numbers are not used for any "
+                     f"conclusion until {need} trading days are in. "
+                     f"<a href='#forward'>Daily details</a></p>")
+    else:
+        parts.append("<p class='muted'><a href='#forward'>Daily details and forward statistics</a></p>")
+    parts.append("</section>")
+    return "\n".join(parts)
+
+
 def forward_section(fwd: pd.DataFrame, r: Results) -> str:
     cfg = r.cfg
     n = len(fwd)
     need = cfg.forward_min_days
-    out = [f"<h2>Forward tracking (out of sample)</h2>",
+    out = [f"<h2 id='forward'>Forward tracking (out of sample)</h2>",
            f'<p class="warn"><b>Pre-registered:</b> no verdict is drawn from forward data before '
            f"{need} trading days. Progress: <b>{n} / {need}</b> days"
            + (" — threshold reached; the forward numbers may now be read as evidence." if n >= need else
@@ -213,6 +259,8 @@ def build(r: Results, fwd: pd.DataFrame, path: Path = DOCS / "index.html") -> Pa
 <section class="verdict"><h3 style="margin-top:0">Verdict</h3>
 {''.join(f'<p>{html.escape(line)}</p>' for line in r.verdict)}
 </section>
+
+{forward_status(fwd, r)}
 
 <div class="tiles">{tiles}</div>
 
