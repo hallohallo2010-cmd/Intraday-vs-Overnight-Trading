@@ -1,0 +1,90 @@
+# Overnight vs Intraday backtest configuration.
+# Edit the ticker list freely; data is cached per ticker in data/.
+
+# 50 large, liquid US stocks across sectors. These form the equal-weight basket.
+# NOTE: this is TODAY's list of winners -> survivorship bias (see report).
+basket:
+  # Technology
+  - AAPL
+  - MSFT
+  - NVDA
+  - ORCL
+  - CSCO
+  - INTC
+  - ADBE
+  - CRM
+  - QCOM
+  - TXN
+  # Communication services
+  - GOOGL
+  - META
+  - AMZN
+  - NFLX
+  - DIS
+  - VZ
+  - T
+  - CMCSA
+  # Financials
+  - JPM
+  - BAC
+  - WFC
+  - GS
+  - MS
+  - BRK-B
+  - V
+  - MA
+  # Health care
+  - JNJ
+  - UNH
+  - PFE
+  - MRK
+  - ABT
+  - LLY
+  - TMO
+  # Consumer staples
+  - PG
+  - KO
+  - PEP
+  - WMT
+  - COST
+  - MCD
+  # Industrials
+  - CAT
+  - HON
+  - GE
+  - UNP
+  - BA
+  # Energy
+  - XOM
+  - CVX
+  - COP
+  # Utilities / real estate / materials / consumer discretionary
+  - NEE
+  - LIN
+  - HD
+
+# Benchmarks: reported per ticker, NOT part of the basket.
+benchmarks:
+  - SPY
+  - QQQ
+
+# Backtest window. Everything after backtest_end is forward (out-of-sample) data
+# and is kept in forward/, never mixed into the backtest.
+start: "2005-01-01"
+backtest_end: "2026-11-20"
+
+# Friction per round trip, in basis points (buy + sell, incl. spread/slippage).
+# Applied to overnight-only and intraday-only (one round trip per day each).
+friction_bps_round_trip: 11
+
+# Round-trip costs (bps) for the cost-sensitivity table in the report.
+cost_sensitivity_bps: [0, 2, 4, 6, 8, 11, 15]
+
+# An "edge" requires the NET mean daily return to be positive with a t-stat at
+# or above this threshold in BOTH halves of the sample.
+edge_t_threshold: 2.0
+
+# Forward tracking: no verdict is drawn before this many forward trading days.
+forward_min_days: 120
+
+trading_days_per_year: 252
