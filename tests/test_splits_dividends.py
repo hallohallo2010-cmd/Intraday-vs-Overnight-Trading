@@ -106,3 +106,22 @@ def test_missing_vendor_day_is_logged():
     issues = DataIssues()
     build_panel({"A": a, "B": b}, issues)
     assert issues.missing_days == [{"ticker": "B", "date": str(a.index[1].date())}]
+
+
+def test_real_large_gap_is_kept_but_logged():
+    # A -37% earnings gap (NFLX, Oct 2011) is real and must not be dropped.
+    df = make_bars([100, 100, 63], [100, 100, 64])
+    issues = DataIssues()
+    legs = compute_legs(df, df.index, "T", issues)
+    assert legs["overnight"].iloc[2] == pytest.approx(-0.37)
+    assert issues.outliers == []
+    assert len(issues.large_moves) == 1
+
+
+def test_impossible_move_is_dropped():
+    # An unannounced -75% gap looks like a missed 4:1 split / bad print.
+    df = make_bars([100, 100, 25], [100, 100, 25.5])
+    issues = DataIssues()
+    legs = compute_legs(df, df.index, "T", issues)
+    assert legs.iloc[2].isna().all()
+    assert issues.outliers[0]["leg"] == "overnight"

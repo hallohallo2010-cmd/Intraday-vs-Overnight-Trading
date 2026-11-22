@@ -31,9 +31,12 @@ CACHE_COLS = ["Open", "High", "Low", "Close", "Volume", "Dividends", "Stock Spli
 
 # A bar's Open/Close may sit marginally outside [Low, High] through rounding.
 RANGE_TOL = 0.005
-# An unexplained overnight or intraday move beyond this (in log terms) is treated
-# as a bad print / missed corporate action and dropped. ln(1.5) ~ +50% / -33%.
-MAX_ABS_LOG_MOVE = math.log(1.5)
+# An overnight or intraday move beyond this (in log terms) is treated as a bad
+# print / missed corporate action and dropped: ln(2.5) ~ +150% / -60%.
+# Real large-cap gaps (e.g. NFLX -37% in Oct 2011, MS +59% in Oct 2008) stay in.
+MAX_ABS_LOG_MOVE = math.log(2.5)
+# Moves beyond this are kept but logged for review: ln(1.3) ~ +30% / -23%.
+REVIEW_ABS_LOG_MOVE = math.log(1.3)
 
 
 @dataclass
@@ -44,6 +47,7 @@ class DataIssues:
     missing_days: list[dict] = field(default_factory=list)
     split_decisions: list[dict] = field(default_factory=list)
     outliers: list[dict] = field(default_factory=list)
+    large_moves: list[dict] = field(default_factory=list)
 
     def summary(self) -> dict[str, int]:
         return {
@@ -51,6 +55,7 @@ class DataIssues:
             "missing_days": len(self.missing_days),
             "splits": len(self.split_decisions),
             "outliers_dropped": len(self.outliers),
+            "large_moves_kept": len(self.large_moves),
         }
 
 
@@ -207,7 +212,14 @@ def compute_legs(
     out = pd.DataFrame({"overnight": overnight, "intraday": intraday}, index=calendar)
 
     for leg in ("overnight", "intraday"):
-        big = np.log1p(out[leg]).abs() > MAX_ABS_LOG_MOVE
+        size = np.log1p(out[leg]).abs()
+        review = (size > REVIEW_ABS_LOG_MOVE) & (size <= MAX_ABS_LOG_MOVE)
+        for dt in out.index[review.fillna(False)]:
+            issues.large_moves.append(
+                {"ticker": ticker, "date": dt.date().isoformat(), "leg": leg,
+                 "return": float(out.at[dt, leg])}
+            )
+        big = size > MAX_ABS_LOG_MOVE
         for dt in out.index[big.fillna(False)]:
             issues.outliers.append(
                 {"ticker": ticker, "date": dt.date().isoformat(), "leg": leg,
