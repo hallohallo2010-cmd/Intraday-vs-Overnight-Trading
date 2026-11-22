@@ -25,8 +25,9 @@ LEGS_PATH = FORWARD_DIR / "forward_legs.csv"
 NY = ZoneInfo("America/New_York")
 
 
-def read_log(path: Path = LOG_PATH) -> pd.DataFrame:
-    if not Path(path).exists():
+def read_log(path: Path | None = None) -> pd.DataFrame:
+    path = Path(path or LOG_PATH)
+    if not path.exists():
         return pd.DataFrame(columns=STRATEGIES + ["n_names"], index=pd.DatetimeIndex([], name="Date"))
     return pd.read_csv(path, index_col="Date", parse_dates=True)
 
