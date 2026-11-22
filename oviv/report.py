@@ -248,10 +248,11 @@ and vice versa, which would earn a little interest in practice.</li>
 
 def write_csvs(r: Results, out: Path = DOCS / "results") -> None:
     out.mkdir(parents=True, exist_ok=True)
-    r.full.to_csv(out / "strategy_full.csv")
-    r.first_half.to_csv(out / "strategy_first_half.csv")
-    r.second_half.to_csv(out / "strategy_second_half.csv")
-    r.yearly_return.to_csv(out / "yearly_returns.csv")
-    r.yearly_t.to_csv(out / "yearly_tstat.csv")
-    pd.concat(r.per_ticker, names=["strategy", "ticker"]).to_csv(out / "per_ticker.csv")
+    fmt = "%.6f"  # rounded so library versions don't create diff noise
+    r.full.to_csv(out / "strategy_full.csv", float_format=fmt)
+    r.first_half.to_csv(out / "strategy_first_half.csv", float_format=fmt)
+    r.second_half.to_csv(out / "strategy_second_half.csv", float_format=fmt)
+    r.yearly_return.to_csv(out / "yearly_returns.csv", float_format=fmt)
+    r.yearly_t.to_csv(out / "yearly_tstat.csv", float_format=fmt)
+    pd.concat(r.per_ticker, names=["strategy", "ticker"]).to_csv(out / "per_ticker.csv", float_format=fmt)
     r.basket.to_csv(out / "basket_daily_returns.csv", float_format="%.8f")
