@@ -41,6 +41,8 @@ table{border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:13px;
 th,td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
 th:first-child,td:first-child{text-align:left}
 th{color:var(--text2);font-weight:600}
+tr.be td{background:var(--warnbg);font-weight:600}tr.be td:first-child{border-left:3px solid var(--warnline)}
+th.grp{text-align:center;border-bottom:1px solid var(--text2)}
 td.pos{color:var(--good)}td.neg{color:var(--bad)}
 .pass{color:var(--good);font-weight:600}.fail{color:var(--bad);font-weight:600}
 img{max-width:100%;height:auto;display:block}
@@ -93,6 +95,32 @@ def year_table(ret: pd.DataFrame, tstat: pd.DataFrame) -> str:
         rows.append(f"<tr><td>{y}</td>{cells}</tr>")
     return (f'<div class="scroll"><table><thead><tr><th>Year</th>{head}</tr></thead>'
             f"<tbody>{''.join(rows)}</tbody></table></div>")
+
+
+def cost_table_html(r: Results) -> str:
+    """Net CAGR / Sharpe / t-stat per leg across round-trip costs, break-evens marked."""
+    t, be, base = r.cost_table, r.break_even, r.cfg.friction_bps_round_trip
+    legs = [("overnight", "Overnight only"), ("intraday", "Intraday only")]
+    marks = {v["mean_bps"]: leg for leg, v in be.items()}
+    head1 = "<th></th>" + "".join(f'<th class="grp" colspan="3">{name} (net)</th>' for _, name in legs)
+    head2 = "<th>Cost per round trip</th>" + "<th>CAGR</th><th>Sharpe</th><th>t-stat</th>" * 2
+    rows = []
+    for c in t.index:
+        if c in marks:
+            label, cls = f"{c:.2f} bps ← {marks[c]} break-even", ' class="be"'
+        else:
+            label, cls = f"{c:g} bps" + (" (base case)" if c == base else ""), ""
+        cells = "".join(_cell(m, t.at[c, (leg, m)]) for leg, _ in legs for m in ("cagr", "sharpe", "t_stat"))
+        rows.append(f"<tr{cls}><td>{label}</td>{cells}</tr>")
+    note = (
+        "<p class='muted'>Highlighted rows are the exact break-even costs: the net mean daily return, Sharpe "
+        "and t-stat are zero there (cost = gross mean return per day). Net CAGR already turns negative a "
+        f"little below that because of volatility drag: at {be['overnight']['cagr_bps']:.2f} bps overnight and "
+        f"{be['intraday']['cagr_bps']:.2f} bps intraday. Every cost is charged once per trading day, "
+        "since each leg is one round trip per day.</p>"
+    )
+    return (f'<div class="scroll"><table><thead><tr>{head1}</tr><tr>{head2}</tr></thead>'
+            f"<tbody>{''.join(rows)}</tbody></table></div>{note}")
 
 
 def picture(returns: pd.DataFrame, alt: str) -> str:
@@ -193,6 +221,10 @@ def build(r: Results, fwd: pd.DataFrame, path: Path = DOCS / "index.html") -> Pa
 <p class="muted">Sharpe uses a zero risk-free rate. t-stat tests whether the mean daily return differs from zero.
 Buy &amp; hold is shown without trading costs (net = gross); it trades only to rebalance.</p>
 
+<h2>Cost sensitivity</h2>
+<p>How much can a round trip cost before trading a leg stops paying? Net results at each cost:</p>
+{cost_table_html(r)}
+
 <h2>Equity curves (log scale)</h2>
 {picture(b[STRATEGIES], "Growth of $1 for each strategy, gross solid and net dashed, log scale")}
 <p class="muted">Solid lines are gross, dashed lines are net of friction. Colour marks the strategy.</p>
@@ -235,7 +267,7 @@ and vice versa, which would earn a little interest in practice.</li>
 {data_quality(r)}
 
 <p class="muted" style="margin-top:32px">Generated {datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC} by
-<code>python run.py</code>. Full metric tables are in <code>docs/results/</code>.</p>
+<code>python run.py</code>. Full metric tables (including <code>cost_sensitivity.csv</code>) are in <code>docs/results/</code>.</p>
 </main>"""
 
     page = (f"<!doctype html><html lang='en'><head><meta charset='utf-8'>"
@@ -255,4 +287,8 @@ def write_csvs(r: Results, out: Path = DOCS / "results") -> None:
     r.yearly_return.to_csv(out / "yearly_returns.csv", float_format=fmt)
     r.yearly_t.to_csv(out / "yearly_tstat.csv", float_format=fmt)
     pd.concat(r.per_ticker, names=["strategy", "ticker"]).to_csv(out / "per_ticker.csv", float_format=fmt)
+    ct = r.cost_table.copy()
+    ct.columns = [f"{leg}_net_{m}" for leg, m in ct.columns]
+    ct.to_csv(out / "cost_sensitivity.csv", float_format=fmt)
+    pd.DataFrame(r.break_even).T.rename_axis("leg").to_csv(out / "break_even_bps.csv", float_format=fmt)
     r.basket.to_csv(out / "basket_daily_returns.csv", float_format="%.8f")

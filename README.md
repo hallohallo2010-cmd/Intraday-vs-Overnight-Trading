@@ -36,6 +36,7 @@ Edit [`config.yaml`](config.yaml):
 * `benchmarks`: SPY and QQQ, reported per ticker but **not** in the basket
 * `start`, `backtest_end`: the backtest window
 * `friction_bps_round_trip`: cost per round trip (default 11 bps)
+* `cost_sensitivity_bps`: costs for the sensitivity table (default 0, 2, 4, 6, 8, 11, 15)
 * `edge_t_threshold`: t-stat a net edge must reach in **both** halves (default 2)
 * `forward_min_days`: forward days needed before any verdict (default 120)
 
@@ -72,6 +73,12 @@ overnight return for that day: it is not allowed to span two nights.
 3. **Intraday only**: buy at the open, sell at the close.
 
 Strategies 2 and 3 make one round trip per day, so net = gross − 11 bps every day.
+
+**Cost sensitivity.** The report also shows net CAGR, Sharpe and t-stat for both
+legs at each cost in `cost_sensitivity_bps`, with the exact break-even marked.
+Because net = gross − cost every day, the net mean, Sharpe and t-stat are exactly
+zero when the cost equals the gross mean daily return. Net CAGR turns negative a
+little earlier because of volatility drag, so that break-even is reported too.
 
 **Statistics.** CAGR, annualised volatility, Sharpe (risk-free rate = 0), maximum
 drawdown, hit rate, and the t-stat of the mean daily return. These are given for
@@ -121,7 +128,9 @@ republishes it automatically.
 `python -m pytest -q` covers:
 
 * **No look-ahead**: dropping or changing future prices leaves all earlier returns unchanged, and each day uses only Close<sub>t−1</sub> and day-*t* prices.
-* **Splits and dividends** on a known example (a 4-for-1 split plus a dividend). Raw and vendor-adjusted inputs give identical returns, and the dividend lands on the overnight leg on its ex-date.
+* **Splits and dividends** on a known example (a 4-for-1 split plus a dividend). Raw and vendor-adjusted inputs give identical returns.
+* **Dividends on ex-dates**: the dividend is added to the overnight leg on its ex-date only. The intraday leg and neighbouring days are untouched, and the dividend flows through to the overnight and buy & hold baskets. Two checks use real cached data: AAPL's 2020-08-07 ex-date, and every KO ex-date since 2005 credited exactly once.
+* **Cost sensitivity**: Sharpe and t-stat are zero at the break-even, net CAGR is zero at the CAGR break-even, and the table matches a direct calculation and falls monotonically with cost.
 * **Friction** is charged exactly once per round trip: net = gross − cost every day, N days cost N round trips, and buy & hold pays none.
 * **Data hygiene**: bad bars are dropped and not filled, missing days are logged, real gaps are kept, and impossible moves are dropped.
 * **Forward**: only dates after the cutoff are written, and today's bar waits for the close.

@@ -18,6 +18,7 @@ class Config:
     edge_t_threshold: float
     forward_min_days: int
     trading_days_per_year: int
+    cost_sensitivity_bps: tuple[float, ...] = (0, 2, 4, 6, 8, 11, 15)
 
     @property
     def friction(self) -> float:
@@ -41,4 +42,5 @@ def load_config(path: str | Path = ROOT / "config.yaml") -> Config:
         edge_t_threshold=float(raw.get("edge_t_threshold", 2.0)),
         forward_min_days=int(raw.get("forward_min_days", 120)),
         trading_days_per_year=int(raw.get("trading_days_per_year", 252)),
+        cost_sensitivity_bps=tuple(float(c) for c in raw.get("cost_sensitivity_bps", [0, 2, 4, 6, 8, 11, 15])),
     )

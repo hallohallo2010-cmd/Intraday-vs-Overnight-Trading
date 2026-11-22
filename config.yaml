@@ -77,6 +77,9 @@ backtest_end: "2026-11-20"
 # Applied to overnight-only and intraday-only (one round trip per day each).
 friction_bps_round_trip: 11
 
+# Round-trip costs (bps) for the cost-sensitivity table in the report.
+cost_sensitivity_bps: [0, 2, 4, 6, 8, 11, 15]
+
 # An "edge" requires the NET mean daily return to be positive with a t-stat at
 # or above this threshold in BOTH halves of the sample.
 edge_t_threshold: 2.0
