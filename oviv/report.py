@@ -43,11 +43,20 @@ th:first-child,td:first-child{text-align:left}
 th{color:var(--text2);font-weight:600}
 tr.be td{background:var(--warnbg);font-weight:600}tr.be td:first-child{border-left:3px solid var(--warnline)}
 th.grp{text-align:center;border-bottom:1px solid var(--text2)}
-td.pos{color:var(--good)}td.neg{color:var(--bad)}
+td.pos,b.pos{color:var(--good)}td.neg,b.neg{color:var(--bad)}
 .pass{color:var(--good);font-weight:600}.fail{color:var(--bad);font-weight:600}
 img{max-width:100%;height:auto;display:block}
 details{margin:8px 0}summary{cursor:pointer;color:var(--accent)}
 small,.muted{color:var(--text2)}
+a{color:var(--accent)}
+.live{border:1px solid var(--line);border-radius:6px;padding:14px 18px;margin:16px 0;display:grid;gap:10px}
+.live h3{margin:0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pill{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--warnbg);
+border:1px solid var(--warnline)}
+.bar{height:8px;background:var(--panel);border-radius:4px;overflow:hidden}
+.bar>span{display:block;height:100%;background:var(--accent)}
+.live .row{display:flex;flex-wrap:wrap;gap:6px 18px;font-variant-numeric:tabular-nums}
+.live p{margin:0}
 """
 
 FMT = {
@@ -129,24 +138,76 @@ def picture(returns: pd.DataFrame, alt: str) -> str:
             f'<img alt="{html.escape(alt)}" src="data:image/png;base64,{light}"></picture>')
 
 
+def forward_unblinded(n_days: int, need: int) -> bool:
+    """Forward returns may be shown only once the pre-registered day count is reached."""
+    return n_days >= need
+
+
+def _progress(n: int, need: int) -> str:
+    pct = min(100, round(100 * n / need))
+    return (f"<div class='bar' role='progressbar' aria-valuemin='0' aria-valuemax='{need}' "
+            f"aria-valuenow='{n}'><span style='width:{pct}%'></span></div>"
+            f"<p><b>{n} / {need}</b> trading days recorded.</p>")
+
+
+def forward_status(fwd: pd.DataFrame, r: Results) -> str:
+    """Live paper-test box at the top of the page.
+
+    Before the threshold it shows only the label, the progress bar and the day
+    counter. No forward return, P&L or date-range detail is rendered, so nobody
+    can peek at (or be swayed by) results before the pre-registered day count.
+    """
+    cfg = r.cfg
+    n, need = len(fwd), cfg.forward_min_days
+    if not forward_unblinded(n, need):
+        return "\n".join([
+            "<section class='live' aria-label='Live paper test'>",
+            "<h3>Live paper test <span class='pill'>Collecting data, no verdict yet</span></h3>",
+            _progress(n, need),
+            "</section>",
+        ])
+
+    rets = fwd[STRATEGIES].astype(float)
+    cum = (1 + rets).prod() - 1
+    return "\n".join([
+        "<section class='live' aria-label='Live paper test'>",
+        "<h3>Live paper test <span class='pill'>Verdict allowed</span></h3>",
+        "<p>Every weekday after the US close, the real open and close prices of that day are fetched and "
+        "each strategy is scored on them. These are new prices the strategy never saw, not past data. "
+        "No real orders are placed.</p>",
+        _progress(n, need),
+        f"<p>From {fwd.index[0].date()} to {fwd.index[-1].date()} (last update). Cumulative paper return:</p>",
+        "<div class='row'>" + "".join(
+            f"<span>{LABELS[s]}: <b class='{'pos' if cum[s] > 0 else 'neg' if cum[s] < 0 else ''}'>"
+            f"{cum[s] * 100:+.2f}%</b></span>" for s in STRATEGIES) + "</div>",
+        "<p class='muted'><a href='#forward'>Daily details and forward statistics</a></p>",
+        "</section>",
+    ])
+
+
 def forward_section(fwd: pd.DataFrame, r: Results) -> str:
     cfg = r.cfg
-    n = len(fwd)
-    need = cfg.forward_min_days
-    out = [f"<h2>Forward tracking (out of sample)</h2>",
-           f'<p class="warn"><b>Pre-registered:</b> no verdict is drawn from forward data before '
-           f"{need} trading days. Progress: <b>{n} / {need}</b> days"
-           + (" — threshold reached; the forward numbers may now be read as evidence." if n >= need else
-              " — numbers below are shown for transparency only.") + "</p>",
-           f"<p class='muted'>Forward data starts after the backtest end ({cfg.backtest_end}), is "
-           "appended once per weekday by GitHub Actions, is never revised, and never enters the backtest.</p>"]
-    if n == 0:
-        out.append("<p>No forward days recorded yet.</p>")
+    n, need = len(fwd), cfg.forward_min_days
+    out = ["<h2 id='forward'>Forward tracking (out of sample)</h2>"]
+    if not forward_unblinded(n, need):
+        out += [
+            "<p class='warn'><b>Pre-registered:</b> forward returns stay hidden on this page until "
+            f"{need} trading days have been recorded. Then the full results appear here.</p>",
+            _progress(n, need),
+            f"<p class='muted'>Forward data starts after the backtest end ({cfg.backtest_end}). It is "
+            "appended once per weekday by GitHub Actions, never revised, and never used in the backtest.</p>",
+        ]
         return "\n".join(out)
+
+    out += [
+        f"<p class='warn'><b>Pre-registered threshold reached:</b> {n} / {need} trading days. "
+        "The forward numbers may now be read as evidence.</p>",
+        f"<p class='muted'>Forward data starts after the backtest end ({cfg.backtest_end}). It is "
+        "appended once per weekday by GitHub Actions, never revised, and never used in the backtest.</p>",
+    ]
     rets = fwd[STRATEGIES].astype(float)
     out.append(metrics_table(stats_table(rets, cfg.trading_days_per_year), LABELS))
-    if n >= 2:
-        out.append(picture(rets, "Forward equity curves"))
+    out.append(picture(rets, "Forward equity curves"))
     last = fwd.tail(10).iloc[::-1]
     head = "".join(f"<th>{LABELS[s]}</th>" for s in STRATEGIES)
     rows = "".join(
@@ -213,6 +274,8 @@ def build(r: Results, fwd: pd.DataFrame, path: Path = DOCS / "index.html") -> Pa
 <section class="verdict"><h3 style="margin-top:0">Verdict</h3>
 {''.join(f'<p>{html.escape(line)}</p>' for line in r.verdict)}
 </section>
+
+{forward_status(fwd, r)}
 
 <div class="tiles">{tiles}</div>
 

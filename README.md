@@ -102,8 +102,11 @@ backtest. The log is append-only: a recorded day is never revised.
 
 > **Pre-registration (written before any forward data existed):** no verdict
 > will be drawn from forward data before **120 trading days** have been
-> recorded. Until then, forward numbers are shown for transparency only. The
-> rules for that verdict are fixed now and match the backtest. The strategies,
+> recorded. Until then the report is blinded: it shows only a progress bar,
+> the "X / 120" day counter and a "Collecting data, no verdict yet" label, with
+> no forward returns or P&L anywhere on the page. Every day is still logged in
+> full to the CSVs in `forward/`. The rules for that verdict are fixed now and
+> match the backtest. The strategies,
 > the 11 bps friction and the edge test (positive net mean, t ≥ 2) stay as they
 > are. `config.yaml` should not be changed during the forward period.
 
@@ -134,6 +137,7 @@ republishes it automatically.
 * **Friction** is charged exactly once per round trip: net = gross − cost every day, N days cost N round trips, and buy & hold pays none.
 * **Data hygiene**: bad bars are dropped and not filled, missing days are logged, real gaps are kept, and impossible moves are dropped.
 * **Forward**: only dates after the cutoff are written, and today's bar waits for the close.
+* **Blinding**: before day 120, the rendered page is identical whatever the forward returns are, so no forward return can leak into it. From day 120 the returns appear.
 
 ## Layout
 
