@@ -138,61 +138,76 @@ def picture(returns: pd.DataFrame, alt: str) -> str:
             f'<img alt="{html.escape(alt)}" src="data:image/png;base64,{light}"></picture>')
 
 
+def forward_unblinded(n_days: int, need: int) -> bool:
+    """Forward returns may be shown only once the pre-registered day count is reached."""
+    return n_days >= need
+
+
+def _progress(n: int, need: int) -> str:
+    pct = min(100, round(100 * n / need))
+    return (f"<div class='bar' role='progressbar' aria-valuemin='0' aria-valuemax='{need}' "
+            f"aria-valuenow='{n}'><span style='width:{pct}%'></span></div>"
+            f"<p><b>{n} / {need}</b> trading days recorded.</p>")
+
+
 def forward_status(fwd: pd.DataFrame, r: Results) -> str:
-    """Live paper-test summary shown at the top of the page. Never draws a verdict early."""
+    """Live paper-test box at the top of the page.
+
+    Before the threshold it shows only the label, the progress bar and the day
+    counter. No forward return, P&L or date-range detail is rendered, so nobody
+    can peek at (or be swayed by) results before the pre-registered day count.
+    """
     cfg = r.cfg
     n, need = len(fwd), cfg.forward_min_days
-    pct = min(100, round(100 * n / need))
-    reached = n >= need
-    pill = "Verdict allowed" if reached else "Collecting data, no verdict yet"
-    parts = [
-        f"<section class='live' aria-label='Live paper test'>",
-        f"<h3>Live paper test <span class='pill'>{pill}</span></h3>",
-        f"<p>Every weekday after the US close, the real open and close prices of that day are fetched and "
-        f"each strategy is scored on them. These are new prices the strategy never saw, not past data. "
-        f"No real orders are placed.</p>",
-        f"<div class='bar' role='progressbar' aria-valuemin='0' aria-valuemax='{need}' aria-valuenow='{n}'>"
-        f"<span style='width:{pct}%'></span></div>",
-    ]
-    if n == 0:
-        parts.append(f"<p><b>0 / {need}</b> trading days recorded. The first live day is the first session "
-                     f"after {cfg.backtest_end}.</p>")
-    else:
-        rets = fwd[STRATEGIES].astype(float)
-        cum = (1 + rets).prod() - 1
-        parts.append(f"<p><b>{n} / {need}</b> trading days recorded, from {fwd.index[0].date()} to "
-                     f"{fwd.index[-1].date()} (last update).</p>")
-        parts.append("<div class='row'>" + "".join(
+    if not forward_unblinded(n, need):
+        return "\n".join([
+            "<section class='live' aria-label='Live paper test'>",
+            "<h3>Live paper test <span class='pill'>Collecting data, no verdict yet</span></h3>",
+            _progress(n, need),
+            "</section>",
+        ])
+
+    rets = fwd[STRATEGIES].astype(float)
+    cum = (1 + rets).prod() - 1
+    return "\n".join([
+        "<section class='live' aria-label='Live paper test'>",
+        "<h3>Live paper test <span class='pill'>Verdict allowed</span></h3>",
+        "<p>Every weekday after the US close, the real open and close prices of that day are fetched and "
+        "each strategy is scored on them. These are new prices the strategy never saw, not past data. "
+        "No real orders are placed.</p>",
+        _progress(n, need),
+        f"<p>From {fwd.index[0].date()} to {fwd.index[-1].date()} (last update). Cumulative paper return:</p>",
+        "<div class='row'>" + "".join(
             f"<span>{LABELS[s]}: <b class='{'pos' if cum[s] > 0 else 'neg' if cum[s] < 0 else ''}'>"
-            f"{cum[s] * 100:+.2f}%</b></span>" for s in STRATEGIES) + "</div>")
-    if not reached:
-        parts.append(f"<p class='muted'>Pre-registered rule: these live numbers are not used for any "
-                     f"conclusion until {need} trading days are in. "
-                     f"<a href='#forward'>Daily details</a></p>")
-    else:
-        parts.append("<p class='muted'><a href='#forward'>Daily details and forward statistics</a></p>")
-    parts.append("</section>")
-    return "\n".join(parts)
+            f"{cum[s] * 100:+.2f}%</b></span>" for s in STRATEGIES) + "</div>",
+        "<p class='muted'><a href='#forward'>Daily details and forward statistics</a></p>",
+        "</section>",
+    ])
 
 
 def forward_section(fwd: pd.DataFrame, r: Results) -> str:
     cfg = r.cfg
-    n = len(fwd)
-    need = cfg.forward_min_days
-    out = [f"<h2 id='forward'>Forward tracking (out of sample)</h2>",
-           f'<p class="warn"><b>Pre-registered:</b> no verdict is drawn from forward data before '
-           f"{need} trading days. Progress: <b>{n} / {need}</b> days"
-           + (" — threshold reached; the forward numbers may now be read as evidence." if n >= need else
-              " — numbers below are shown for transparency only.") + "</p>",
-           f"<p class='muted'>Forward data starts after the backtest end ({cfg.backtest_end}), is "
-           "appended once per weekday by GitHub Actions, is never revised, and never enters the backtest.</p>"]
-    if n == 0:
-        out.append("<p>No forward days recorded yet.</p>")
+    n, need = len(fwd), cfg.forward_min_days
+    out = ["<h2 id='forward'>Forward tracking (out of sample)</h2>"]
+    if not forward_unblinded(n, need):
+        out += [
+            "<p class='warn'><b>Pre-registered:</b> forward returns stay hidden on this page until "
+            f"{need} trading days have been recorded. Then the full results appear here.</p>",
+            _progress(n, need),
+            f"<p class='muted'>Forward data starts after the backtest end ({cfg.backtest_end}). It is "
+            "appended once per weekday by GitHub Actions, never revised, and never used in the backtest.</p>",
+        ]
         return "\n".join(out)
+
+    out += [
+        f"<p class='warn'><b>Pre-registered threshold reached:</b> {n} / {need} trading days. "
+        "The forward numbers may now be read as evidence.</p>",
+        f"<p class='muted'>Forward data starts after the backtest end ({cfg.backtest_end}). It is "
+        "appended once per weekday by GitHub Actions, never revised, and never used in the backtest.</p>",
+    ]
     rets = fwd[STRATEGIES].astype(float)
     out.append(metrics_table(stats_table(rets, cfg.trading_days_per_year), LABELS))
-    if n >= 2:
-        out.append(picture(rets, "Forward equity curves"))
+    out.append(picture(rets, "Forward equity curves"))
     last = fwd.tail(10).iloc[::-1]
     head = "".join(f"<th>{LABELS[s]}</th>" for s in STRATEGIES)
     rows = "".join(
